@@ -1,0 +1,8 @@
+multisensor_sensors:
+  ros__parameters:
+    publish_rate: 10.0
+    frame_id: "camera_link"
+    qos.reliability: "best_effort"
+    qos.history: "keep_last"
+    qos.depth: 10
+

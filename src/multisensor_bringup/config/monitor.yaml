@@ -1,0 +1,6 @@
+multisensor_monitor:
+  ros__parameters:
+    timeout_sec: 3.0
+    status_publish_period: 1.0
+    alert_cooldown_sec: 5.0
+

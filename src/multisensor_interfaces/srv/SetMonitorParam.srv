@@ -1,0 +1,5 @@
+string key
+float32 value
+---
+bool success
+string message

@@ -1,0 +1,11 @@
+multisensor_fusion:
+  ros__parameters:
+    angle_tolerance_deg: 30.0
+    vision_weight: 0.6
+    audio_weight: 0.4
+    sync_queue_size: 10
+    sync_slop: 0.1
+    fusion_qos.reliability: "reliable"
+    fusion_qos.history: "keep_last"
+    fusion_qos.depth: 10
+

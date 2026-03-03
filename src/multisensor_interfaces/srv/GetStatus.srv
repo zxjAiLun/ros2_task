@@ -1,0 +1,3 @@
+string node_name
+---
+multisensor_interfaces/NodeStatus[] statuses

@@ -1,0 +1,15 @@
+build/
+install/
+log/
+
+*.pyc
+__pycache__/
+*.swp
+*.swo
+
+.vscode/
+.idea/
+
+*.docx
+指令统计.txt
+

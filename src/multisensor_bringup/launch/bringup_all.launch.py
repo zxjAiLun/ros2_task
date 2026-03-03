@@ -1,16 +1,16 @@
 from launch import LaunchDescription
 from launch.actions import IncludeLaunchDescription
 from launch.launch_description_sources import PythonLaunchDescriptionSource
-from launch_ros.actions import Node
-from pathlib import Path
+from ament_index_python.packages import get_package_share_directory
+import os
 
 
 def generate_launch_description() -> LaunchDescription:
-    pkg_share = Path(__file__).resolve().parent.parent
+    pkg_share = get_package_share_directory('multisensor_bringup')
 
-    sensors_launch = PythonLaunchDescriptionSource(str(pkg_share / 'launch' / 'sensors.launch.py'))
-    fusion_launch = PythonLaunchDescriptionSource(str(pkg_share / 'launch' / 'fusion.launch.py'))
-    monitor_launch = PythonLaunchDescriptionSource(str(pkg_share / 'launch' / 'monitor.launch.py'))
+    sensors_launch = PythonLaunchDescriptionSource(os.path.join(pkg_share, 'launch', 'sensors.launch.py'))
+    fusion_launch = PythonLaunchDescriptionSource(os.path.join(pkg_share, 'launch', 'fusion.launch.py'))
+    monitor_launch = PythonLaunchDescriptionSource(os.path.join(pkg_share, 'launch', 'monitor.launch.py'))
 
     return LaunchDescription(
         [

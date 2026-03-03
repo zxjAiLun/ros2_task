@@ -11,5 +11,5 @@ __pycache__/
 .idea/
 
 *.docx
-指令统计.txt
+*.txt
 

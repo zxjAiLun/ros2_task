@@ -13,6 +13,9 @@
 - `multisensor_fusion`：`fusion_node`，基于 `message_filters` 时间同步与规则融合
 - `multisensor_monitor`：`status_monitor` 状态监控与告警
 - `multisensor_bringup`：Launch 与 YAML 参数配置
+- `multisensor_sensors_cpp`：C++ 版 `vision_node_cpp` / `audio_node_cpp` / `lidar_node_cpp`
+- `multisensor_fusion_cpp`：C++ 版 `fusion_node_cpp`，与 C++ 传感器对接输出 `/fusion/result_cpp`
+- `multisensor_monitor_cpp`：C++ 版 `status_monitor_cpp`，监控 C++ 话题并发布 `/system/status_cpp` / `/system/alert_cpp`
 
 ## 构建
 
@@ -27,16 +30,31 @@ source install/setup.bash
 - 一键启动全系统：
 
 ```bash
-ros2 launch multisensor_bringup bringup_all.launch.py
+ros2 launch multisensor_bringup bringup_all.launch.py        # Python 版本
+ros2 launch multisensor_bringup bringup_all_cpp.launch.py    # C++ 版本
 ```
 
 - 单独启动示例（需先 `source install/setup.bash`）：
 
 ```bash
+# Python 版本
 ros2 launch multisensor_bringup sensors.launch.py
 ros2 launch multisensor_bringup fusion.launch.py
 ros2 launch multisensor_bringup monitor.launch.py
+
+# C++ 版本
+ros2 launch multisensor_bringup sensors_cpp.launch.py
+ros2 launch multisensor_bringup fusion_cpp.launch.py
+ros2 launch multisensor_bringup monitor_cpp.launch.py
 ```
+
+## Python 与 C++ 行为对比建议
+
+- 只启动 Python 版或 C++ 版其中一套，避免同一话题上多源干扰。
+- 使用 `ros2 topic echo` / `rqt_plot` 对比：
+  - Python `/vision/data` 与 C++ `/vision_cpp/data` 的检测概率、角度与置信度分布是否接近。
+  - Python `/fusion/result` 与 C++ `/fusion/result_cpp` 的 `fusion_status`、`fusion_confidence` 在典型场景下是否一致。
+- 在 C++ 版本中同样可通过停止某个 C++ 传感器节点 ≥ 3 秒，观察 `/system/status_cpp` 与 `/system/alert_cpp` 行为是否符合预期。
 
 ## QoS 策略与共享内存
 

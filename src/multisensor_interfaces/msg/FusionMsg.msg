@@ -1,0 +1,7 @@
+std_msgs/Header header
+bool vision_person_detected
+float32 vision_confidence
+float32 audio_source_angle
+float32 lidar_distance
+string fusion_status
+

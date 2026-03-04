@@ -8,14 +8,19 @@
 
 ## 工作空间构成
 
-- `multisensor_interfaces`：自定义消息与服务
-- `multisensor_sensors`：`vision_node` / `audio_node` / `lidar_node` 模拟传感器
-- `multisensor_fusion`：`fusion_node`，基于 `message_filters` 时间同步与规则融合
-- `multisensor_monitor`：`status_monitor` 状态监控与告警
+- `multisensor_interfaces`：自定义消息与服务（`VisionMsg` / `AudioMsg` / `LidarMsg` / `FusionMsg` / `NodeStatusMsg` / `AlertMsg`）
+- `multisensor_sensors`：Python 版 `vision_node` / `audio_node` / `lidar_node`，发布：
+  - `/vision/detection` (`VisionMsg`)
+  - `/audio/source_angle` (`AudioMsg`)
+  - `/lidar/scan` (`LidarMsg`)
+- `multisensor_fusion`：`fusion_node`，订阅上述三个话题并输出 `/fusion/result` (`FusionMsg`)
+- `multisensor_monitor`：`status_monitor`，订阅 `/vision/detection`、`/audio/source_angle`、`/lidar/scan`、`/fusion/result`，发布：
+  - `/system/status` (`NodeStatusMsg`)
+  - `/system/alert` (`AlertMsg`)
 - `multisensor_bringup`：Launch 与 YAML 参数配置
-- `multisensor_sensors_cpp`：C++ 版 `vision_node_cpp` / `audio_node_cpp` / `lidar_node_cpp`
-- `multisensor_fusion_cpp`：C++ 版 `fusion_node_cpp`，与 C++ 传感器对接输出 `/fusion/result_cpp`
-- `multisensor_monitor_cpp`：C++ 版 `status_monitor_cpp`，监控 C++ 话题并发布 `/system/status_cpp` / `/system/alert_cpp`
+- `multisensor_sensors_cpp`：C++ 版 `vision_node_cpp` / `audio_node_cpp` / `lidar_node_cpp`，与 Python 一致地发布 `/vision/detection`、`/audio/source_angle`、`/lidar/scan`
+- `multisensor_fusion_cpp`：C++ 版 `fusion_node_cpp`，订阅 `/vision/detection`、`/audio/source_angle`、`/lidar/scan` 并输出 `/fusion/result`
+- `multisensor_monitor_cpp`：C++ 版 `status_monitor_cpp`，监控上述话题并发布 `/system/status_cpp` / `/system/alert_cpp`
 
 ## 构建
 
@@ -58,8 +63,8 @@ ros2 launch multisensor_bringup monitor_cpp.launch.py
 
 ## QoS 策略与共享内存
 
-- 传感器话题（`/vision/data`、`/audio/data`、`/lidar/data`）：使用 BestEffort + KeepLast，depth 默认 10，侧重实时性。
-- 融合结果与系统状态（`/fusion/result`、`/system/status`、`/system/alert`）：使用 Reliable + KeepLast，depth 默认 10，避免关键结果丢失。
+- 传感器话题（`/vision/detection`、`/audio/source_angle`、`/lidar/scan`）：使用 BestEffort + KeepLast，depth 默认 10，侧重实时性。
+- 融合结果与系统状态（`/fusion/result`、`/system/status`、`/system/alert` 以及 C++ 版 `/system/status_cpp`、`/system/alert_cpp`）：使用 Reliable + KeepLast，depth 默认 10，避免关键结果丢失。
 - 可在 `multisensor_bringup/config/*.yaml` 中修改 QoS 相关参数（如 `qos.reliability`、`qos.depth`）。
 
 **共享内存说明**：
@@ -87,6 +92,54 @@ ros2 launch multisensor_bringup bringup_all.launch.py
 - 使用 `rqt_graph` 检查话题连通性。
 - 使用 `rqt_plot` 观察 `/fusion/result/fusion_confidence`、`/fusion/result/target_angle` 与 `/system/status/last_update_age`。
 - 模拟断线测试：在全系统运行时停止任一传感器节点 ≥ 3 秒，观察 `/system/alert` 是否产生 WARN 告警。
+
+## 调整监控参数的 Action 接口
+
+- Action 类型：`multisensor_interfaces/action/AdjustNodeParams`
+- 话题名：`/system/adjust_node_params`
+- 作用：替代原来的 `SetMonitorParam.srv`，用于在运行时调整 `status_monitor` / `status_monitor_cpp` 的监控参数，并返回执行进度与结果。
+
+**Goal 字段**：
+
+- `string key`：参数名（支持 `timeout_sec`、`status_publish_period`、`alert_cooldown_sec`）
+- `float32 value`：对应的新数值
+
+**Result 字段**：
+
+- `bool success`：是否更新成功
+- `string message`：结果说明（例如 `Updated timeout_sec` 或错误原因）
+
+**Feedback 字段**：
+
+- `float32 progress`：执行进度 0.0–1.0
+- `string current_state`：当前状态（如 `validating` / `applying` / `done` / `failed`）
+
+### 使用示例（Python / C++ 通用）
+
+在任意终端中先进入工作空间并 source 安装环境：
+
+```bash
+cd ros2_task_ws
+source install/setup.bash
+```
+
+调整监控超时时间为 5 秒：
+
+```bash
+ros2 action send_goal /system/adjust_node_params \
+  multisensor_interfaces/action/AdjustNodeParams \
+  "{key: 'timeout_sec', value: 5.0}"
+```
+
+调整状态发布周期为 0.5 秒：
+
+```bash
+ros2 action send_goal /system/adjust_node_params \
+  multisensor_interfaces/action/AdjustNodeParams \
+  "{key: 'status_publish_period', value: 0.5}"
+```
+
+在 Python 版和 C++ 版 bringup（`bringup_all.launch.py` / `bringup_all_cpp.launch.py`）运行时均可使用该 Action，`status_monitor` 与 `status_monitor_cpp` 会分别作为 Action Server 响应请求。
 
 ## 通信延迟测量示例
 

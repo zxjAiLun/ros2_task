@@ -1,3 +1,4 @@
+// C++ status_monitor_cpp using NodeStatusMsg/AlertMsg and new topics
 #include <chrono>
 #include <map>
 #include <memory>
@@ -5,28 +6,30 @@
 
 #include "rclcpp/rclcpp.hpp"
 #include "rclcpp/qos.hpp"
+#include "rclcpp_action/rclcpp_action.hpp"
 
-#include "multisensor_interfaces/msg/node_status.hpp"
-#include "multisensor_interfaces/msg/system_alert.hpp"
-#include "multisensor_interfaces/msg/vision.hpp"
-#include "multisensor_interfaces/msg/audio.hpp"
-#include "multisensor_interfaces/msg/lidar.hpp"
-#include "multisensor_interfaces/msg/fusion_result.hpp"
+#include "multisensor_interfaces/msg/node_status_msg.hpp"
+#include "multisensor_interfaces/msg/alert_msg.hpp"
+#include "multisensor_interfaces/msg/vision_msg.hpp"
+#include "multisensor_interfaces/msg/audio_msg.hpp"
+#include "multisensor_interfaces/msg/lidar_msg.hpp"
+#include "multisensor_interfaces/msg/fusion_msg.hpp"
 
 #include "multisensor_interfaces/srv/get_status.hpp"
-#include "multisensor_interfaces/srv/set_monitor_param.hpp"
+#include "multisensor_interfaces/action/adjust_node_params.hpp"
 
 class StatusMonitorNodeCpp : public rclcpp::Node
 {
 public:
-  using NodeStatus = multisensor_interfaces::msg::NodeStatus;
-  using SystemAlert = multisensor_interfaces::msg::SystemAlert;
-  using Vision = multisensor_interfaces::msg::Vision;
-  using Audio = multisensor_interfaces::msg::Audio;
-  using Lidar = multisensor_interfaces::msg::Lidar;
-  using FusionResult = multisensor_interfaces::msg::FusionResult;
+  using NodeStatusMsg = multisensor_interfaces::msg::NodeStatusMsg;
+  using AlertMsg = multisensor_interfaces::msg::AlertMsg;
+  using Vision = multisensor_interfaces::msg::VisionMsg;
+  using Audio = multisensor_interfaces::msg::AudioMsg;
+  using Lidar = multisensor_interfaces::msg::LidarMsg;
+  using FusionMsg = multisensor_interfaces::msg::FusionMsg;
   using GetStatus = multisensor_interfaces::srv::GetStatus;
-  using SetMonitorParam = multisensor_interfaces::srv::SetMonitorParam;
+  using AdjustNodeParams = multisensor_interfaces::action::AdjustNodeParams;
+  using GoalHandleAdjustNodeParams = rclcpp_action::ServerGoalHandle<AdjustNodeParams>;
 
   StatusMonitorNodeCpp()
   : Node("status_monitor_cpp")
@@ -53,20 +56,20 @@ public:
     }
 
     sub_vision_ = this->create_subscription<Vision>(
-      "/vision_cpp/data", qos_sensor,
+      "/vision/detection", qos_sensor,
       std::bind(&StatusMonitorNodeCpp::on_vision, this, std::placeholders::_1));
     sub_audio_ = this->create_subscription<Audio>(
-      "/audio_cpp/data", qos_sensor,
+      "/audio/source_angle", qos_sensor,
       std::bind(&StatusMonitorNodeCpp::on_audio, this, std::placeholders::_1));
     sub_lidar_ = this->create_subscription<Lidar>(
-      "/lidar_cpp/data", qos_sensor,
+      "/lidar/scan", qos_sensor,
       std::bind(&StatusMonitorNodeCpp::on_lidar, this, std::placeholders::_1));
-    sub_fusion_ = this->create_subscription<FusionResult>(
-      "/fusion/result_cpp", qos_sensor,
+    sub_fusion_ = this->create_subscription<FusionMsg>(
+      "/fusion/result", qos_sensor,
       std::bind(&StatusMonitorNodeCpp::on_fusion, this, std::placeholders::_1));
 
-    pub_status_ = this->create_publisher<NodeStatus>("/system/status_cpp", qos_status);
-    pub_alert_ = this->create_publisher<SystemAlert>("/system/alert_cpp", qos_status);
+    pub_status_ = this->create_publisher<NodeStatusMsg>("/system/status_cpp", qos_status);
+    pub_alert_ = this->create_publisher<AlertMsg>("/system/alert_cpp", qos_status);
 
     timer_ = this->create_wall_timer(
       std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -78,10 +81,12 @@ public:
       std::bind(&StatusMonitorNodeCpp::handle_get_status, this,
         std::placeholders::_1, std::placeholders::_2));
 
-    srv_set_param_ = this->create_service<SetMonitorParam>(
-      "/system/set_monitor_param_cpp",
-      std::bind(&StatusMonitorNodeCpp::handle_set_param, this,
-        std::placeholders::_1, std::placeholders::_2));
+    adjust_action_server_ = rclcpp_action::create_server<AdjustNodeParams>(
+      this,
+      "/system/adjust_node_params",
+      std::bind(&StatusMonitorNodeCpp::handle_adjust_goal, this, std::placeholders::_1, std::placeholders::_2),
+      std::bind(&StatusMonitorNodeCpp::handle_adjust_cancel, this, std::placeholders::_1),
+      std::bind(&StatusMonitorNodeCpp::handle_adjust_accepted, this, std::placeholders::_1));
 
     RCLCPP_INFO(
       this->get_logger(),
@@ -105,7 +110,7 @@ private:
     last_update_["lidar_node_cpp"] = this->now();
   }
 
-  void on_fusion(const FusionResult::SharedPtr)
+  void on_fusion(const FusionMsg::SharedPtr)
   {
     last_update_["fusion_node_cpp"] = this->now();
   }
@@ -125,12 +130,12 @@ private:
 
       bool alive = has_ever_seen && age <= timeout_sec_;
 
-      NodeStatus status_msg;
+      NodeStatusMsg status_msg;
       status_msg.header.stamp = now;
       status_msg.header.frame_id = "";
       status_msg.node_name = node_name;
-      status_msg.alive = alive;
-      status_msg.last_update_age = static_cast<float>(
+      status_msg.is_online = alive;
+      status_msg.last_update_time = static_cast<float>(
         std::isinf(age) ? -1.0 : age);
       pub_status_->publish(status_msg);
 
@@ -150,12 +155,10 @@ private:
       }
     }
 
-    SystemAlert alert;
+    AlertMsg alert;
     alert.header.stamp = now;
     alert.header.frame_id = "";
-    alert.level = "WARN";
-    alert.source_node = node_name;
-    alert.message = "Node " + node_name + " no update for " + std::to_string(age) +
+    alert.message = "WARN [" + node_name + "]: no update for " + std::to_string(age) +
       "s (> " + std::to_string(timeout_sec_) + "s)";
     pub_alert_->publish(alert);
 
@@ -193,27 +196,56 @@ private:
     }
     bool alive = has_ever_seen && age <= timeout_sec_;
 
-    NodeStatus status_msg;
+    NodeStatusMsg status_msg;
     status_msg.header.stamp = now;
     status_msg.header.frame_id = "";
     status_msg.node_name = node_name;
-    status_msg.alive = alive;
-    status_msg.last_update_age = static_cast<float>(
+    status_msg.is_online = alive;
+    status_msg.last_update_time = static_cast<float>(
       std::isinf(age) ? -1.0 : age);
     response->statuses.push_back(status_msg);
   }
 
-  void handle_set_param(
-    const std::shared_ptr<SetMonitorParam::Request> request,
-    std::shared_ptr<SetMonitorParam::Response> response)
+  rclcpp_action::GoalResponse handle_adjust_goal(
+    const rclcpp_action::GoalUUID &,
+    std::shared_ptr<const AdjustNodeParams::Goal> goal)
   {
-    const std::string key = request->key;
-    double value = request->value;
+    std::string key = goal->key;
+    if (key == "timeout_sec" || key == "status_publish_period" || key == "alert_cooldown_sec") {
+      return rclcpp_action::GoalResponse::ACCEPT_AND_EXECUTE;
+    }
+    RCLCPP_WARN(this->get_logger(), "Reject AdjustNodeParams goal with unknown key: %s", key.c_str());
+    return rclcpp_action::GoalResponse::REJECT;
+  }
+
+  rclcpp_action::CancelResponse handle_adjust_cancel(
+    const std::shared_ptr<GoalHandleAdjustNodeParams> /*goal_handle*/)
+  {
+    return rclcpp_action::CancelResponse::ACCEPT;
+  }
+
+  void handle_adjust_accepted(const std::shared_ptr<GoalHandleAdjustNodeParams> goal_handle)
+  {
+    std::thread{std::bind(&StatusMonitorNodeCpp::execute_adjust, this, goal_handle)}.detach();
+  }
+
+  void execute_adjust(const std::shared_ptr<GoalHandleAdjustNodeParams> goal_handle)
+  {
+    const auto goal = goal_handle->get_goal();
+    std::string key = goal->key;
+    double value = goal->value;
+
+    auto feedback = std::make_shared<AdjustNodeParams::Feedback>();
+    feedback->progress = 0.0f;
+    feedback->current_state = "validating";
+    goal_handle->publish_feedback(feedback);
+
+    bool success = true;
+    std::string message;
 
     if (key == "timeout_sec") {
       timeout_sec_ = value;
-      response->success = true;
-      response->message = "Updated timeout_sec";
+      message = "Updated timeout_sec";
     } else if (key == "status_publish_period") {
       status_publish_period_ = value;
       timer_->cancel();
@@ -221,15 +253,35 @@ private:
         std::chrono::duration_cast<std::chrono::milliseconds>(
           std::chrono::duration<double>(status_publish_period_)),
         std::bind(&StatusMonitorNodeCpp::on_timer, this));
-      response->success = true;
-      response->message = "Updated status_publish_period";
+      message = "Updated status_publish_period";
     } else if (key == "alert_cooldown_sec") {
       alert_cooldown_sec_ = value;
-      response->success = true;
-      response->message = "Updated alert_cooldown_sec";
+      message = "Updated alert_cooldown_sec";
     } else {
-      response->success = false;
-      response->message = "Unknown parameter key: " + key;
+      success = false;
+      message = "Unknown parameter key: " + key;
+    }
+
+    if (goal_handle->is_canceling()) {
+      auto result = std::make_shared<AdjustNodeParams::Result>();
+      result->success = false;
+      result->message = "Goal canceled";
+      goal_handle->canceled(result);
+      return;
+    }
+
+    feedback->progress = 1.0f;
+    feedback->current_state = success ? "done" : "failed";
+    goal_handle->publish_feedback(feedback);
+
+    auto result = std::make_shared<AdjustNodeParams::Result>();
+    result->success = success;
+    result->message = message;
+
+    if (success) {
+      goal_handle->succeed(result);
+    } else {
+      goal_handle->abort(result);
     }
   }
 
@@ -243,15 +295,15 @@ private:
   rclcpp::Subscription<Vision>::SharedPtr sub_vision_;
   rclcpp::Subscription<Audio>::SharedPtr sub_audio_;
   rclcpp::Subscription<Lidar>::SharedPtr sub_lidar_;
-  rclcpp::Subscription<FusionResult>::SharedPtr sub_fusion_;
+  rclcpp::Subscription<FusionMsg>::SharedPtr sub_fusion_;
 
-  rclcpp::Publisher<NodeStatus>::SharedPtr pub_status_;
-  rclcpp::Publisher<SystemAlert>::SharedPtr pub_alert_;
+  rclcpp::Publisher<NodeStatusMsg>::SharedPtr pub_status_;
+  rclcpp::Publisher<AlertMsg>::SharedPtr pub_alert_;
 
   rclcpp::TimerBase::SharedPtr timer_;
 
   rclcpp::Service<GetStatus>::SharedPtr srv_get_status_;
-  rclcpp::Service<SetMonitorParam>::SharedPtr srv_set_param_;
+  rclcpp_action::Server<AdjustNodeParams>::SharedPtr adjust_action_server_;
 };
 
 int main(int argc, char ** argv)

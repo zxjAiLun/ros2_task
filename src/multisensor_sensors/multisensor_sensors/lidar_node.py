@@ -3,7 +3,7 @@ import random
 import rclpy
 from rclpy.node import Node
 
-from multisensor_interfaces.msg import Lidar
+from multisensor_interfaces.msg import LidarMsg
 from .common import (
     create_qos_from_params,
     get_publish_rate_hz,
@@ -27,7 +27,7 @@ class LidarNode(Node):
         }
         self.sim_params = load_simulation_params(self, defaults)
 
-        self.publisher_ = self.create_publisher(Lidar, '/lidar/data', self.qos_profile)
+        self.publisher_ = self.create_publisher(LidarMsg, '/lidar/scan', self.qos_profile)
         timer_period = 1.0 / self.publish_rate_hz if self.publish_rate_hz > 0.0 else 0.2
         self.timer = self.create_timer(timer_period, self.timer_callback)
 
@@ -37,18 +37,20 @@ class LidarNode(Node):
         )
 
     def timer_callback(self) -> None:
-        msg = Lidar()
+        msg = LidarMsg()
         now = self.get_clock().now().to_msg()
         msg.header.stamp = now
         msg.header.frame_id = self.frame_id
 
         has_obstacle = random.random() < self.sim_params['obstacle_probability']
-        msg.obstacle_detected = has_obstacle
 
         if has_obstacle:
-            msg.min_distance = random.uniform(self.sim_params['distance_min_m'], self.sim_params['distance_max_m'])
+            msg.lidar_distance = random.uniform(
+                self.sim_params['distance_min_m'],
+                self.sim_params['distance_max_m'],
+            )
         else:
-            msg.min_distance = float(self.sim_params['no_obstacle_distance_m'])
+            msg.lidar_distance = float(self.sim_params['no_obstacle_distance_m'])
 
         self.publisher_.publish(msg)
 

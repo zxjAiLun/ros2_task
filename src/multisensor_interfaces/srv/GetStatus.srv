@@ -1,3 +1,3 @@
 string node_name
 ---
-multisensor_interfaces/NodeStatus[] statuses
+multisensor_interfaces/NodeStatusMsg[] statuses

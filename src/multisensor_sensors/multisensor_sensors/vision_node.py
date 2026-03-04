@@ -1,14 +1,12 @@
-import math
 import random
 
 import rclpy
 from rclpy.node import Node
 
-from multisensor_interfaces.msg import Vision
+from multisensor_interfaces.msg import VisionMsg
 from .common import (
     create_qos_from_params,
     get_publish_rate_hz,
-    angle_deg_normalized,
     random_bool_with_probability,
     load_simulation_params,
 )
@@ -24,14 +22,12 @@ class VisionNode(Node):
 
         defaults = {
             'detect_probability': 0.6,
-            'angle_mean_deg': 0.0,
-            'angle_sigma_deg': 30.0,
             'confidence_min': 0.5,
             'confidence_max': 1.0,
         }
         self.sim_params = load_simulation_params(self, defaults)
 
-        self.publisher_ = self.create_publisher(Vision, '/vision/data', self.qos_profile)
+        self.publisher_ = self.create_publisher(VisionMsg, '/vision/detection', self.qos_profile)
         timer_period = 1.0 / self.publish_rate_hz if self.publish_rate_hz > 0.0 else 0.1
         self.timer = self.create_timer(timer_period, self.timer_callback)
 
@@ -41,21 +37,21 @@ class VisionNode(Node):
         )
 
     def timer_callback(self) -> None:
-        msg = Vision()
+        msg = VisionMsg()
         now = self.get_clock().now().to_msg()
         msg.header.stamp = now
         msg.header.frame_id = self.frame_id
 
         detected = random_bool_with_probability(self.sim_params['detect_probability'])
-        msg.detected = detected
+        msg.person_detected = detected
 
         if detected:
-            angle_noise = random.gauss(self.sim_params['angle_mean_deg'], self.sim_params['angle_sigma_deg'])
-            msg.angle = float(angle_deg_normalized(angle_noise))
-            msg.confidence = random.uniform(self.sim_params['confidence_min'], self.sim_params['confidence_max'])
+            msg.vision_confidence = random.uniform(
+                self.sim_params['confidence_min'],
+                self.sim_params['confidence_max'],
+            )
         else:
-            msg.angle = float('nan')
-            msg.confidence = 0.0
+            msg.vision_confidence = 0.0
 
         self.publisher_.publish(msg)
 

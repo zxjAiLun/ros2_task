@@ -4,9 +4,18 @@ import rclpy
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy
 from rclpy.time import Time
+from rclpy.action import ActionServer, CancelResponse, GoalResponse
 
-from multisensor_interfaces.msg import NodeStatus, SystemAlert, Vision, Audio, Lidar, FusionResult
-from multisensor_interfaces.srv import GetStatus, SetMonitorParam
+from multisensor_interfaces.msg import (
+    NodeStatusMsg,
+    AlertMsg,
+    VisionMsg,
+    AudioMsg,
+    LidarMsg,
+    FusionMsg,
+)
+from multisensor_interfaces.srv import GetStatus
+from multisensor_interfaces.action import AdjustNodeParams
 
 
 class StatusMonitorNode(Node):
@@ -38,25 +47,33 @@ class StatusMonitorNode(Node):
         self.last_alert_time: Dict[str, Optional[Time]] = {name: None for name in self.last_update.keys()}
 
         self._subscriptions.append(
-            self.create_subscription(Vision, '/vision/data', self._make_cb('vision_node'), qos_sensor)
+            self.create_subscription(VisionMsg, '/vision/detection', self._make_cb('vision_node'), qos_sensor)
         )
         self._subscriptions.append(
-            self.create_subscription(Audio, '/audio/data', self._make_cb('audio_node'), qos_sensor)
+            self.create_subscription(AudioMsg, '/audio/source_angle', self._make_cb('audio_node'), qos_sensor)
         )
         self._subscriptions.append(
-            self.create_subscription(Lidar, '/lidar/data', self._make_cb('lidar_node'), qos_sensor)
+            self.create_subscription(LidarMsg, '/lidar/scan', self._make_cb('lidar_node'), qos_sensor)
         )
         self._subscriptions.append(
-            self.create_subscription(FusionResult, '/fusion/result', self._make_cb('fusion_node'), qos_sensor)
+            self.create_subscription(FusionMsg, '/fusion/result', self._make_cb('fusion_node'), qos_sensor)
         )
 
-        self.pub_status = self.create_publisher(NodeStatus, '/system/status', self.qos_status)
-        self.pub_alert = self.create_publisher(SystemAlert, '/system/alert', self.qos_status)
+        self.pub_status = self.create_publisher(NodeStatusMsg, '/system/status', self.qos_status)
+        self.pub_alert = self.create_publisher(AlertMsg, '/system/alert', self.qos_status)
 
         self.timer = self.create_timer(self.status_publish_period, self.timer_callback)
 
         self.srv_get_status = self.create_service(GetStatus, '/system/get_status', self.handle_get_status)
-        self.srv_set_param = self.create_service(SetMonitorParam, '/system/set_monitor_param', self.handle_set_param)
+
+        self.adjust_action_server = ActionServer(
+            self,
+            AdjustNodeParams,
+            '/system/adjust_node_params',
+            execute_callback=self.execute_adjust_node_params,
+            goal_callback=self.handle_adjust_goal,
+            cancel_callback=self.handle_adjust_cancel,
+        )
 
         self.get_logger().info(
             f'status_monitor started with timeout={self.timeout_sec}s, '
@@ -78,12 +95,12 @@ class StatusMonitorNode(Node):
                 age = (now - last_time).nanoseconds / 1e9
                 alive = age <= self.timeout_sec
 
-            status_msg = NodeStatus()
+            status_msg = NodeStatusMsg()
             status_msg.header.stamp = now.to_msg()
             status_msg.header.frame_id = ''
             status_msg.node_name = node_name
-            status_msg.alive = alive
-            status_msg.last_update_age = float(age if age != float('inf') else -1.0)
+            status_msg.is_online = alive
+            status_msg.last_update_time = float(age if age != float('inf') else -1.0)
             self.pub_status.publish(status_msg)
 
             if not alive:
@@ -96,12 +113,10 @@ class StatusMonitorNode(Node):
             if dt < self.alert_cooldown_sec:
                 return
 
-        alert = SystemAlert()
+        alert = AlertMsg()
         alert.header.stamp = now.to_msg()
         alert.header.frame_id = ''
-        alert.level = 'WARN'
-        alert.source_node = node_name
-        alert.message = f'Node {node_name} no update for {age:.2f}s (> {self.timeout_sec}s)'
+        alert.message = f'WARN [{node_name}]: no update for {age:.2f}s (> {self.timeout_sec}s)'
 
         self.pub_alert.publish(alert)
         self.last_alert_time[node_name] = now
@@ -121,39 +136,75 @@ class StatusMonitorNode(Node):
                 age = (now - last_time).nanoseconds / 1e9
                 alive = age <= self.timeout_sec
 
-            status_msg = NodeStatus()
+            status_msg = NodeStatusMsg()
             status_msg.header.stamp = now.to_msg()
             status_msg.header.frame_id = ''
             status_msg.node_name = node_name
-            status_msg.alive = alive
-            status_msg.last_update_age = float(age if age != float('inf') else -1.0)
+            status_msg.is_online = alive
+            status_msg.last_update_time = float(age if age != float('inf') else -1.0)
             response.statuses.append(status_msg)
 
         return response
 
-    def handle_set_param(self, request: SetMonitorParam.Request, response: SetMonitorParam.Response) -> SetMonitorParam.Response:
-        key = request.key.strip()
-        value = request.value
+    def handle_adjust_goal(self, goal_request: AdjustNodeParams.Goal) -> GoalResponse:
+        key = goal_request.key.strip()
+        if key in ('timeout_sec', 'status_publish_period', 'alert_cooldown_sec'):
+            return GoalResponse.ACCEPT
+        self.get_logger().warn(f'Reject AdjustNodeParams goal with unknown key: {key}')
+        return GoalResponse.REJECT
+
+    def handle_adjust_cancel(self, _goal_handle) -> CancelResponse:
+        return CancelResponse.ACCEPT
+
+    async def execute_adjust_node_params(self, goal_handle) -> AdjustNodeParams.Result:
+        goal = goal_handle.request
+        key = goal.key.strip()
+        value = goal.value
+
+        feedback = AdjustNodeParams.Feedback()
+        feedback.progress = 0.0
+        feedback.current_state = 'validating'
+        goal_handle.publish_feedback(feedback)
+
+        success = True
+        message = ''
 
         if key == 'timeout_sec':
             self.timeout_sec = float(value)
-            response.success = True
-            response.message = f'Updated timeout_sec to {value}'
+            message = f'Updated timeout_sec to {value}'
         elif key == 'status_publish_period':
             self.status_publish_period = float(value)
             self.timer.cancel()
             self.timer = self.create_timer(self.status_publish_period, self.timer_callback)
-            response.success = True
-            response.message = f'Updated status_publish_period to {value}'
+            message = f'Updated status_publish_period to {value}'
         elif key == 'alert_cooldown_sec':
             self.alert_cooldown_sec = float(value)
-            response.success = True
-            response.message = f'Updated alert_cooldown_sec to {value}'
+            message = f'Updated alert_cooldown_sec to {value}'
         else:
-            response.success = False
-            response.message = f'Unknown parameter key: {key}'
+            success = False
+            message = f'Unknown parameter key: {key}'
 
-        return response
+        if goal_handle.is_cancel_requested:
+            goal_handle.canceled()
+            result = AdjustNodeParams.Result()
+            result.success = False
+            result.message = 'Goal canceled'
+            return result
+
+        feedback.progress = 1.0
+        feedback.current_state = 'done' if success else 'failed'
+        goal_handle.publish_feedback(feedback)
+
+        result = AdjustNodeParams.Result()
+        result.success = success
+        result.message = message
+
+        if success:
+            goal_handle.succeed()
+        else:
+            goal_handle.abort()
+
+        return result
 
 
 def main(args=None) -> None:

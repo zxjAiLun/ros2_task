@@ -11,12 +11,12 @@ find_package(rosidl_default_generators REQUIRED)
 find_package(std_msgs REQUIRED)
 
 set(msg_files
-  "msg/Vision.msg"
-  "msg/Audio.msg"
-  "msg/Lidar.msg"
-  "msg/FusionResult.msg"
-  "msg/NodeStatus.msg"
-  "msg/SystemAlert.msg"
+  "msg/VisionMsg.msg"
+  "msg/AudioMsg.msg"
+  "msg/LidarMsg.msg"
+  "msg/FusionMsg.msg"
+  "msg/NodeStatusMsg.msg"
+  "msg/AlertMsg.msg"
 )
 
 set(srv_files
@@ -24,9 +24,14 @@ set(srv_files
   "srv/SetMonitorParam.srv"
 )
 
+set(action_files
+  "action/AdjustNodeParams.action"
+)
+
 rosidl_generate_interfaces(${PROJECT_NAME}
   ${msg_files}
   ${srv_files}
+  ${action_files}
   DEPENDENCIES std_msgs
 )
 

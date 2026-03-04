@@ -8,7 +8,7 @@ from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy
 
 from message_filters import ApproximateTimeSynchronizer, Subscriber
 
-from multisensor_interfaces.msg import Vision, Audio, Lidar, FusionResult
+from multisensor_interfaces.msg import VisionMsg, AudioMsg, LidarMsg, FusionMsg
 
 
 def create_fusion_qos(node: Node) -> QoSProfile:
@@ -42,9 +42,9 @@ class FusionNode(Node):
             history=HistoryPolicy.KEEP_LAST,
             depth=10,
         )
-        self.sub_vision = Subscriber(self, Vision, '/vision/data', qos_profile=qos_sensor)
-        self.sub_audio = Subscriber(self, Audio, '/audio/data', qos_profile=qos_sensor)
-        self.sub_lidar = Subscriber(self, Lidar, '/lidar/data', qos_profile=qos_sensor)
+        self.sub_vision = Subscriber(self, VisionMsg, '/vision/detection', qos_profile=qos_sensor)
+        self.sub_audio = Subscriber(self, AudioMsg, '/audio/source_angle', qos_profile=qos_sensor)
+        self.sub_lidar = Subscriber(self, LidarMsg, '/lidar/scan', qos_profile=qos_sensor)
 
         self.sync = ApproximateTimeSynchronizer(
             [self.sub_vision, self.sub_audio, self.sub_lidar],
@@ -54,60 +54,49 @@ class FusionNode(Node):
         self.sync.registerCallback(self.sync_callback)
 
         self.qos_fusion = create_fusion_qos(self)
-        self.pub_fusion = self.create_publisher(FusionResult, '/fusion/result', self.qos_fusion)
+        self.pub_fusion = self.create_publisher(FusionMsg, '/fusion/result', self.qos_fusion)
 
         self.get_logger().info(
             f'fusion_node started with angle_tolerance={self.angle_tolerance_deg}deg, '
             f'queue_size={self.queue_size}, slop={self.slop}'
         )
 
-    def sync_callback(self, vision: Vision, audio: Audio, lidar: Lidar) -> None:
-        result = FusionResult()
+    def sync_callback(self, vision: VisionMsg, audio: AudioMsg, lidar: LidarMsg) -> None:
+        result = FusionMsg()
         result.header.stamp = vision.header.stamp
         result.header.frame_id = 'fusion_base'
 
-        status, confidence, target_angle = self.compute_fusion(vision, audio, lidar)
+        status, vision_conf, audio_angle, lidar_distance = self.compute_fusion(vision, audio, lidar)
+        result.vision_person_detected = vision.person_detected
+        result.vision_confidence = vision_conf
+        result.audio_source_angle = audio_angle
+        result.lidar_distance = lidar_distance
         result.fusion_status = status
-        result.fusion_confidence = confidence
-        result.target_angle = target_angle if target_angle is not None else float('nan')
 
         self.pub_fusion.publish(result)
 
     def compute_fusion(
         self,
-        vision: Vision,
-        audio: Audio,
-        lidar: Lidar,
-    ) -> tuple[str, float, Optional[float]]:
-        v = vision.detected
-        a = audio.voice_detected
+        vision: VisionMsg,
+        audio: AudioMsg,
+        lidar: LidarMsg,
+    ) -> tuple[str, float, float, float]:
+        v = vision.person_detected
+        a_angle = audio.audio_source_angle
 
-        if not v and not a:
-            return 'none', 0.0, None
-        if v and not a:
-            return 'vision_only', max(vision.confidence, 0.0), vision.angle
-        if a and not v:
-            return 'audio_only', max(audio.energy, 0.0), audio.direction
+        # lidar_distance 始终提供（用于规则或上层使用）
+        lidar_distance = lidar.lidar_distance
 
-        if math.isnan(vision.angle) or math.isnan(audio.direction):
-            return 'conflict', 0.0, None
+        # 简化后的规则：只看视觉是否有人 + 音频角是否有效
+        if not v and math.isnan(a_angle):
+            return 'none', 0.0, float('nan'), lidar_distance
+        if v and math.isnan(a_angle):
+            return 'vision_only', max(vision.vision_confidence, 0.0), float('nan'), lidar_distance
+        if (not v) and not math.isnan(a_angle):
+            return 'audio_only', 0.0, a_angle, lidar_distance
 
-        diff = abs(self.normalize_angle_deg(vision.angle - audio.direction))
-        if diff <= self.angle_tolerance_deg:
-            v_conf = max(vision.confidence, 0.0)
-            a_conf = max(audio.energy, 0.0)
-            norm = v_conf + a_conf
-            if norm > 0.0:
-                v_w = self.vision_weight * v_conf / norm
-                a_w = self.audio_weight * a_conf / norm
-            else:
-                v_w = self.vision_weight
-                a_w = self.audio_weight
-            fused_angle = v_w * vision.angle + a_w * audio.direction
-            fused_conf = min(1.0, (v_conf * self.vision_weight + a_conf * self.audio_weight))
-            return 'both', fused_conf, fused_angle
-
-        return 'conflict', 0.0, None
+        # 视觉有人，音频角有效：认为多源一致，输出 both
+        return 'both', max(vision.vision_confidence, 0.0), a_angle, lidar_distance
 
     @staticmethod
     def normalize_angle_deg(angle: float) -> float:

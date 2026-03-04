@@ -1,10 +1,11 @@
+// C++ lidar_node_cpp using LidarMsg (single distance)
 #include <chrono>
 #include <memory>
 #include <random>
 #include <string>
 
 #include "rclcpp/rclcpp.hpp"
-#include "multisensor_interfaces/msg/lidar.hpp"
+#include "multisensor_interfaces/msg/lidar_msg.hpp"
 
 using namespace std::chrono_literals;
 
@@ -24,7 +25,7 @@ public:
     no_obstacle_distance_m_ = this->declare_parameter<double>("no_obstacle_distance_m", 10.0);
 
     auto qos = rclcpp::QoS(rclcpp::KeepLast(10)).best_effort();
-    publisher_ = this->create_publisher<multisensor_interfaces::msg::Lidar>("/lidar_cpp/data", qos);
+    publisher_ = this->create_publisher<multisensor_interfaces::msg::LidarMsg>("/lidar/scan", qos);
 
     std::chrono::duration<double> period{publish_rate > 0.0 ? 1.0 / publish_rate : 0.2};
     timer_ = this->create_wall_timer(
@@ -40,19 +41,18 @@ public:
 private:
   void on_timer()
   {
-    multisensor_interfaces::msg::Lidar msg;
+    multisensor_interfaces::msg::LidarMsg msg;
     msg.header.stamp = this->now();
     msg.header.frame_id = frame_id_;
 
     std::uniform_real_distribution<double> uni(0.0, 1.0);
     bool obstacle = uni(rng_) < obstacle_probability_;
-    msg.obstacle_detected = obstacle;
 
     if (obstacle) {
       std::uniform_real_distribution<double> dist(distance_min_m_, distance_max_m_);
-      msg.min_distance = static_cast<float>(dist(rng_));
+      msg.lidar_distance = static_cast<float>(dist(rng_));
     } else {
-      msg.min_distance = static_cast<float>(no_obstacle_distance_m_);
+      msg.lidar_distance = static_cast<float>(no_obstacle_distance_m_);
     }
 
     publisher_->publish(msg);
@@ -64,7 +64,7 @@ private:
   double distance_max_m_;
   double no_obstacle_distance_m_;
 
-  rclcpp::Publisher<multisensor_interfaces::msg::Lidar>::SharedPtr publisher_;
+  rclcpp::Publisher<multisensor_interfaces::msg::LidarMsg>::SharedPtr publisher_;
   rclcpp::TimerBase::SharedPtr timer_;
   std::mt19937 rng_;
 };

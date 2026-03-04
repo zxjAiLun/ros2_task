@@ -3,7 +3,7 @@ import random
 import rclpy
 from rclpy.node import Node
 
-from multisensor_interfaces.msg import Audio
+from multisensor_interfaces.msg import AudioMsg
 from .common import (
     create_qos_from_params,
     get_publish_rate_hz,
@@ -30,7 +30,7 @@ class AudioNode(Node):
         }
         self.sim_params = load_simulation_params(self, defaults)
 
-        self.publisher_ = self.create_publisher(Audio, '/audio/data', self.qos_profile)
+        self.publisher_ = self.create_publisher(AudioMsg, '/audio/source_angle', self.qos_profile)
         timer_period = 1.0 / self.publish_rate_hz if self.publish_rate_hz > 0.0 else 0.1
         self.timer = self.create_timer(timer_period, self.timer_callback)
 
@@ -40,21 +40,18 @@ class AudioNode(Node):
         )
 
     def timer_callback(self) -> None:
-        msg = Audio()
+        msg = AudioMsg()
         now = self.get_clock().now().to_msg()
         msg.header.stamp = now
         msg.header.frame_id = self.frame_id
 
         voice_detected = random_bool_with_probability(self.sim_params['voice_probability'])
-        msg.voice_detected = voice_detected
 
         if voice_detected:
             angle = random.gauss(self.sim_params['angle_mean_deg'], self.sim_params['angle_sigma_deg'])
-            msg.direction = float(angle_deg_normalized(angle))
-            msg.energy = random.uniform(self.sim_params['energy_min'], self.sim_params['energy_max'])
+            msg.audio_source_angle = float(angle_deg_normalized(angle))
         else:
-            msg.direction = float('nan')
-            msg.energy = 0.0
+            msg.audio_source_angle = float('nan')
 
         self.publisher_.publish(msg)
 

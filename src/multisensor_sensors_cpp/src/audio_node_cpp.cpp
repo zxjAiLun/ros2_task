@@ -1,3 +1,4 @@
+// C++ audio_node_cpp using AudioMsg (only angle)
 #include <chrono>
 #include <cmath>
 #include <memory>
@@ -5,7 +6,7 @@
 #include <string>
 
 #include "rclcpp/rclcpp.hpp"
-#include "multisensor_interfaces/msg/audio.hpp"
+#include "multisensor_interfaces/msg/audio_msg.hpp"
 
 using namespace std::chrono_literals;
 
@@ -22,11 +23,9 @@ public:
     voice_probability_ = this->declare_parameter<double>("voice_probability", 0.5);
     angle_mean_deg_ = this->declare_parameter<double>("angle_mean_deg", 0.0);
     angle_sigma_deg_ = this->declare_parameter<double>("angle_sigma_deg", 45.0);
-    energy_min_ = this->declare_parameter<double>("energy_min", 0.2);
-    energy_max_ = this->declare_parameter<double>("energy_max", 1.0);
 
     auto qos = rclcpp::QoS(rclcpp::KeepLast(10)).best_effort();
-    publisher_ = this->create_publisher<multisensor_interfaces::msg::Audio>("/audio_cpp/data", qos);
+    publisher_ = this->create_publisher<multisensor_interfaces::msg::AudioMsg>("/audio/source_angle", qos);
 
     std::chrono::duration<double> period{publish_rate > 0.0 ? 1.0 / publish_rate : 0.1};
     timer_ = this->create_wall_timer(
@@ -42,23 +41,19 @@ public:
 private:
   void on_timer()
   {
-    multisensor_interfaces::msg::Audio msg;
+    multisensor_interfaces::msg::AudioMsg msg;
     msg.header.stamp = this->now();
     msg.header.frame_id = frame_id_;
 
     std::uniform_real_distribution<double> uni(0.0, 1.0);
     bool voice_detected = uni(rng_) < voice_probability_;
-    msg.voice_detected = voice_detected;
 
     if (voice_detected) {
       std::normal_distribution<double> angle_dist(angle_mean_deg_, angle_sigma_deg_);
       double angle = normalize_angle_deg(angle_dist(rng_));
-      std::uniform_real_distribution<double> energy_dist(energy_min_, energy_max_);
-      msg.direction = static_cast<float>(angle);
-      msg.energy = static_cast<float>(energy_dist(rng_));
+      msg.audio_source_angle = static_cast<float>(angle);
     } else {
-      msg.direction = std::numeric_limits<float>::quiet_NaN();
-      msg.energy = 0.0f;
+      msg.audio_source_angle = std::numeric_limits<float>::quiet_NaN();
     }
 
     publisher_->publish(msg);
@@ -79,10 +74,8 @@ private:
   double voice_probability_;
   double angle_mean_deg_;
   double angle_sigma_deg_;
-  double energy_min_;
-  double energy_max_;
 
-  rclcpp::Publisher<multisensor_interfaces::msg::Audio>::SharedPtr publisher_;
+  rclcpp::Publisher<multisensor_interfaces::msg::AudioMsg>::SharedPtr publisher_;
   rclcpp::TimerBase::SharedPtr timer_;
   std::mt19937 rng_;
 };

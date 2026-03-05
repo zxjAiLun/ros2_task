@@ -169,20 +169,25 @@ class StatusMonitorNode(Node):
         success = True
         message = ''
 
-        if key == 'timeout_sec':
-            self.timeout_sec = float(value)
-            message = f'Updated timeout_sec to {value}'
-        elif key == 'status_publish_period':
-            self.status_publish_period = float(value)
-            self.timer.cancel()
-            self.timer = self.create_timer(self.status_publish_period, self.timer_callback)
-            message = f'Updated status_publish_period to {value}'
-        elif key == 'alert_cooldown_sec':
-            self.alert_cooldown_sec = float(value)
-            message = f'Updated alert_cooldown_sec to {value}'
-        else:
+        try:
+            if key == 'timeout_sec':
+                self.timeout_sec = float(value)
+                message = f'Updated timeout_sec to {value}'
+            elif key == 'status_publish_period':
+                self.status_publish_period = float(value)
+                self.timer.cancel()
+                self.timer = self.create_timer(self.status_publish_period, self.timer_callback)
+                message = f'Updated status_publish_period to {value}'
+            elif key == 'alert_cooldown_sec':
+                self.alert_cooldown_sec = float(value)
+                message = f'Updated alert_cooldown_sec to {value}'
+            else:
+                success = False
+                message = f'Unknown parameter key: {key}'
+        except Exception as exc:  # noqa: BLE001
             success = False
-            message = f'Unknown parameter key: {key}'
+            message = f'Exception while updating param {key}: {exc}'
+            self.get_logger().error(message)
 
         if goal_handle.is_cancel_requested:
             goal_handle.canceled()

@@ -25,6 +25,7 @@ setup(
     entry_points={
         'console_scripts': [
             'fusion_node = multisensor_fusion.fusion_node:main',
+        'multimodal_recorder = multisensor_fusion.multimodal_recorder_node:main',
         ],
     },
 )

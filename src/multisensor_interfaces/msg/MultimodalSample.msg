@@ -1,0 +1,7 @@
+std_msgs/Header header
+multisensor_interfaces/VisionMsg vision_summary
+multisensor_interfaces/AudioMsg audio_summary
+multisensor_interfaces/LidarMsg lidar_summary
+multisensor_interfaces/FusionMsg fusion_result
+string source_profile
+

@@ -44,14 +44,23 @@ class AudioNode(Node):
         now = self.get_clock().now().to_msg()
         msg.header.stamp = now
         msg.header.frame_id = self.frame_id
+        msg.format = 'pcm16'
 
-        voice_detected = random_bool_with_probability(self.sim_params['voice_probability'])
-
-        if voice_detected:
-            angle = random.gauss(self.sim_params['angle_mean_deg'], self.sim_params['angle_sigma_deg'])
-            msg.audio_source_angle = float(angle_deg_normalized(angle))
-        else:
-            msg.audio_source_angle = float('nan')
+        # 简单生成一段固定长度的一维音频波形（正弦 + 噪声），直接序列化为 int16/uint8
+        sample_count = 160  # 例如 10ms@16kHz
+        amplitude = 20000
+        freq = 440.0
+        samples = []
+        for i in range(sample_count):
+            t = float(i) / 16000.0
+            value = int(
+                amplitude
+                * random_bool_with_probability(self.sim_params['voice_probability'])
+                * __import__('math').sin(2.0 * __import__('math').pi * freq * t)
+            )
+            samples.append(value & 0xFFFF)
+        # 小端 int16 打包
+        msg.data = b''.join(int.to_bytes(s, length=2, byteorder='little', signed=False) for s in samples)
 
         self.publisher_.publish(msg)
 

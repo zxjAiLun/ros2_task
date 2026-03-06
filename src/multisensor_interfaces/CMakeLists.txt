@@ -17,6 +17,7 @@ set(msg_files
   "msg/FusionMsg.msg"
   "msg/NodeStatusMsg.msg"
   "msg/AlertMsg.msg"
+  "msg/MultimodalSample.msg"
 )
 
 set(srv_files

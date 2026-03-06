@@ -1,3 +1,5 @@
 std_msgs/Header header
-float32 lidar_distance
+string type
+float32[] point_cloud
+int32 point_count
 

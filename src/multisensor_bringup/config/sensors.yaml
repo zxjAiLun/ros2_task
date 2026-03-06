@@ -5,4 +5,8 @@ multisensor_sensors:
     qos.reliability: "best_effort"
     qos.history: "keep_last"
     qos.depth: 10
+    image_width: 320
+    image_height: 240
+    image_rate: 10.0
+    points_per_scan: 360
 

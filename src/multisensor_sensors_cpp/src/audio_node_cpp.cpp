@@ -44,16 +44,28 @@ private:
     multisensor_interfaces::msg::AudioMsg msg;
     msg.header.stamp = this->now();
     msg.header.frame_id = frame_id_;
+    msg.format = "pcm16";
+
+    // 生成一段简单的一维音频波形并序列化为 uint8 数据
+    const int sample_count = 160;
+    const double amplitude = 20000.0;
+    const double freq = 440.0;
+    const double sample_rate = 16000.0;
+
+    msg.data.clear();
+    msg.data.reserve(static_cast<size_t>(sample_count * 2));
 
     std::uniform_real_distribution<double> uni(0.0, 1.0);
     bool voice_detected = uni(rng_) < voice_probability_;
 
-    if (voice_detected) {
-      std::normal_distribution<double> angle_dist(angle_mean_deg_, angle_sigma_deg_);
-      double angle = normalize_angle_deg(angle_dist(rng_));
-      msg.audio_source_angle = static_cast<float>(angle);
-    } else {
-      msg.audio_source_angle = std::numeric_limits<float>::quiet_NaN();
+    for (int i = 0; i < sample_count; ++i) {
+      double t = static_cast<double>(i) / sample_rate;
+      double s = voice_detected ? std::sin(2.0 * M_PI * freq * t) : 0.0;
+      int16_t value = static_cast<int16_t>(amplitude * s);
+      uint8_t lo = static_cast<uint8_t>(value & 0xFF);
+      uint8_t hi = static_cast<uint8_t>((value >> 8) & 0xFF);
+      msg.data.push_back(lo);
+      msg.data.push_back(hi);
     }
 
     publisher_->publish(msg);

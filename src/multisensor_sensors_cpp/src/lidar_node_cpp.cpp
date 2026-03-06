@@ -44,16 +44,33 @@ private:
     multisensor_interfaces::msg::LidarMsg msg;
     msg.header.stamp = this->now();
     msg.header.frame_id = frame_id_;
+    msg.type = "2d_circle";
 
     std::uniform_real_distribution<double> uni(0.0, 1.0);
     bool obstacle = uni(rng_) < obstacle_probability_;
 
+    double radius;
     if (obstacle) {
       std::uniform_real_distribution<double> dist(distance_min_m_, distance_max_m_);
-      msg.lidar_distance = static_cast<float>(dist(rng_));
+      radius = dist(rng_);
     } else {
-      msg.lidar_distance = static_cast<float>(no_obstacle_distance_m_);
+      radius = no_obstacle_distance_m_;
     }
+
+    const int points_per_scan = 360;
+    msg.point_cloud.clear();
+    msg.point_cloud.reserve(static_cast<size_t>(points_per_scan * 3));
+
+    for (int i = 0; i < points_per_scan; ++i) {
+      double angle = 2.0 * M_PI * static_cast<double>(i) / static_cast<double>(points_per_scan);
+      float x = static_cast<float>(radius * std::cos(angle));
+      float y = static_cast<float>(radius * std::sin(angle));
+      float z = 0.0f;
+      msg.point_cloud.push_back(x);
+      msg.point_cloud.push_back(y);
+      msg.point_cloud.push_back(z);
+    }
+    msg.point_count = static_cast<int32_t>(points_per_scan);
 
     publisher_->publish(msg);
   }

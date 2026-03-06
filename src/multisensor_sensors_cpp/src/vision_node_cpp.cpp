@@ -43,17 +43,17 @@ private:
     multisensor_interfaces::msg::VisionMsg msg;
     msg.header.stamp = this->now();
     msg.header.frame_id = frame_id_;
+    msg.encoding = "mono8";
 
+    // 生成一帧简单的灰度图像数据，直接写入 data
+    const int width = 320;
+    const int height = 240;
     std::uniform_real_distribution<double> uni(0.0, 1.0);
     bool detected = uni(rng_) < detect_probability_;
-    msg.person_detected = detected;
-
-    if (detected) {
-      std::uniform_real_distribution<double> conf_dist(confidence_min_, confidence_max_);
-      msg.vision_confidence = static_cast<float>(conf_dist(rng_));
-    } else {
-      msg.vision_confidence = 0.0f;
-    }
+    const uint8_t base_level = 30;
+    const uint8_t target_level = 200;
+    uint8_t level = detected ? target_level : base_level;
+    msg.data.resize(static_cast<size_t>(width * height), level);
 
     publisher_->publish(msg);
   }

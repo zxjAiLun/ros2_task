@@ -59,57 +59,18 @@ private:
     const Audio::ConstSharedPtr audio,
     const Lidar::ConstSharedPtr lidar)
   {
-    (void)lidar;
     FusionMsg result;
     result.header.stamp = vision->header.stamp;
     result.header.frame_id = "fusion_cpp_base";
+    result.frame_id = "fusion_cpp_base";
 
-    std::string status;
-    double vision_conf = 0.0;
-    double audio_angle = std::numeric_limits<double>::quiet_NaN();
-    double lidar_distance = 0.0;
-
-    compute_fusion(*vision, *audio, *lidar, status, vision_conf, audio_angle, lidar_distance);
-
-    result.vision_person_detected = vision->person_detected;
-    result.vision_confidence = static_cast<float>(vision_conf);
-    result.audio_source_angle = static_cast<float>(audio_angle);
-    result.lidar_distance = static_cast<float>(lidar_distance);
-    result.fusion_status = status;
+    // 直接打包原始多模态数据，供下游多模态模型使用
+    result.vision = *vision;
+    result.audio = *audio;
+    result.lidar = *lidar;
+    result.is_aligned = true;
 
     pub_fusion_->publish(result);
-  }
-
-  void compute_fusion(
-    const Vision & vision,
-    const Audio & audio,
-    const Lidar & lidar,
-    std::string & status,
-    double & vision_conf,
-    double & audio_angle,
-    double & lidar_distance) const
-  {
-    bool v = vision.person_detected;
-    audio_angle = static_cast<double>(audio.audio_source_angle);
-    lidar_distance = static_cast<double>(lidar.lidar_distance);
-    vision_conf = static_cast<double>(vision.vision_confidence);
-
-    if (!v && std::isnan(audio_angle)) {
-      status = "none";
-      vision_conf = 0.0;
-      return;
-    }
-    if (v && std::isnan(audio_angle)) {
-      status = "vision_only";
-      return;
-    }
-    if (!v && !std::isnan(audio_angle)) {
-      status = "audio_only";
-      vision_conf = 0.0;
-      return;
-    }
-
-    status = "both";
   }
 
   message_filters::Subscriber<Vision> sub_vision_;
